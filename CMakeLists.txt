@@ -3,21 +3,36 @@ project(Nextron)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# Пути к SFML (локальная папка в проекте)
-set(SFML_DIR "${CMAKE_SOURCE_DIR}/SFML")
+# Пути к заголовочным файлам
+target_include_directories(Nextron PRIVATE 
+    ${CMAKE_SOURCE_DIR}/engine 
+    ${CMAKE_SOURCE_DIR}/include
+)
 
-# Добавляем SFML в проект
-find_package(SFML REQUIRED COMPONENTS graphics window system)
+# Поиск исходников автоматически
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
+    src/*.cpp
+    engine/**/*.cpp
+    gameplay/**/*.cpp
+)
 
-add_executable(Nextron src/main.cpp)
+# Создаём исполняемый файл
+add_executable(Nextron ${SOURCES})
 
-# Указываем пути к SFML
-target_include_directories(Nextron PRIVATE ${SFML_DIR}/include)
-target_link_directories(Nextron PRIVATE ${SFML_DIR}/lib)
-target_link_libraries(Nextron PRIVATE sfml-graphics sfml-window sfml-system)
+# Подключаем OpenGL и GLFW
+find_package(OpenGL REQUIRED)
+find_package(glfw3 REQUIRED)
 
+# Подключаем библиотеки
+target_link_libraries(Nextron PRIVATE glfw OpenGL::GL)
+
+# Если GLFW лежит в папке lib
+# target_link_directories(Nextron PRIVATE ${CMAKE_SOURCE_DIR}/lib)
+target_link_libraries(Nextron PRIVATE glfw3)
+
+# Копируем DLL после сборки (для Windows)
 if (WIN32)
     add_custom_command(TARGET Nextron POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${SFML_DIR}/bin" $<TARGET_FILE_DIR:Nextron>)
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/glfw3.dll" $<TARGET_FILE_DIR:Nextron>)
 endif()
