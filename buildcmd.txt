@@ -1,1 +1,0 @@
-cls && C:\msys64\ucrt64\bin\g++.exe -fdiagnostics-color=always -g -I"E:\MY PROJECTS\Nextron\include" -L"E:\MY PROJECTS\Nextron\lib" -o "E:\MY PROJECTS\Nextron\src\main.exe" "E:\MY PROJECTS\Nextron\src\main.cpp" "E:\MY PROJECTS\Nextron\src\glad.c" -lglfw3dll -lopengl32 && "src/main.exe"

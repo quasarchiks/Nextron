@@ -1,0 +1,1 @@
+$ g++ -o bin/game.exe main.cpp -Iinclude -Llib -lSDL3 -lSDL3_image -mwindows && bin/game.exe
