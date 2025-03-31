@@ -45,8 +45,8 @@ float frameTime = 0.125f;
 int textureIndex = 0;
 
 bool isDashing = false;
-float dashSpeed = 6.0f;
-float dashTime = 0.2f;
+float dashSpeed = 10.0f;
+float dashTime = 0.1f;
 float dashCooldown = 1.0f;
 std::chrono::steady_clock::time_point dashStartTime;
 std::chrono::steady_clock::time_point lastDashTime;
@@ -123,13 +123,13 @@ void update() {
     x += vx;
     y += vy;
 
-    if (x < 0 || x + size > WIDTH) {
+    if (x + size/3 < 0 || x + size/3*2 > WIDTH) {
         vx = -vx;
-        x = x < 0 ? 0 : WIDTH - size;
+        x = x < 0 ? 0 - size/3 : WIDTH - size/3*2;
     }
-    if (y < 0 || y + size > HEIGHT) {
+    if (y + size/3 < 0 || y + size/3*2 > HEIGHT) {
         vy = -vy;
-        y = y < 0 ? 0 : HEIGHT - size;
+        y = y < 0 ? 0 - size/3 : HEIGHT - size/3*2;
     }
 
     vx *= friction;
