@@ -1,103 +1,187 @@
-#include <SDL3/SDL.h>
-#include <vector>
-#include <ctime>
-#include <cstdlib>
 #include <iostream>
+#include <vector>
+#include <random>
+#include <ctime>
+#include <algorithm>
+#include <cmath>
 
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
-const int TILE_SIZE = 4;
-const int MAP_WIDTH = SCREEN_WIDTH / TILE_SIZE;
-const int MAP_HEIGHT = SCREEN_HEIGHT / TILE_SIZE;
-const int FILL_PROBABILITY = 45;  // Процент заполненности стенами
-const int STEPS = 5;  // Количество шагов автоматной обработки
+const int MAP_WIDTH = 100;
+const int MAP_HEIGHT = 100;
 
-std::vector<std::vector<int>> map;
+enum TileType {
+    WALL = 0,
+    FLOOR = 1
+};
 
-void initializeMap() {
-    map.resize(MAP_HEIGHT, std::vector<int>(MAP_WIDTH));
-    for (int y = 0; y < MAP_HEIGHT; ++y) {
-        for (int x = 0; x < MAP_WIDTH; ++x) {
-            map[y][x] = (rand() % 100 < FILL_PROBABILITY) ? 1 : 0;
-        }
+class DungeonGenerator {
+private:
+    std::vector<std::vector<int>> map;
+    std::random_device rd;
+    std::mt19937 gen;
+
+    struct CircleRoom {
+        int x, y;  // Center coordinates
+        int radius;
+    };
+
+    void initializeMap() {
+        map.resize(MAP_HEIGHT, std::vector<int>(MAP_WIDTH, WALL));
     }
-}
 
-int countNeighbors(int x, int y) {
-    int count = 0;
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            if (dx == 0 && dy == 0) continue;
-            int nx = x + dx, ny = y + dy;
-            if (nx >= 0 && ny >= 0 && nx < MAP_WIDTH && ny < MAP_HEIGHT) {
-                count += map[ny][nx];
-            } else {
-                count++;  // Считаем край карты как стену
+    bool isValidCirclePlacement(const CircleRoom& room, const std::vector<CircleRoom>& existingRooms) {
+        if (room.x - room.radius - 1 < 0 || room.x + room.radius + 1 >= MAP_WIDTH ||
+            room.y - room.radius - 1 < 0 || room.y + room.radius + 1 >= MAP_HEIGHT) {
+            return false;
+        }
+
+        for (const auto& existing : existingRooms) {
+            float distance = std::sqrt((room.x - existing.x) * (room.x - existing.x) + 
+                                     (room.y - existing.y) * (room.y - existing.y));
+            if (distance < (room.radius + existing.radius + 5)) { // Minimum separation
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void createCircleRoom(const CircleRoom& room) {
+        for (int y = room.y - room.radius; y <= room.y + room.radius; y++) {
+            for (int x = room.x - room.radius; x <= room.x + room.radius; x++) {
+                float distance = std::sqrt((x - room.x) * (x - room.x) + 
+                                        (y - room.y) * (y - room.y));
+                if (distance <= room.radius) {
+                    map[y][x] = FLOOR;
+                }
             }
         }
     }
-    return count;
-}
 
-void cellularAutomataStep() {
-    std::vector<std::vector<int>> newMap = map;
-    for (int y = 0; y < MAP_HEIGHT; ++y) {
-        for (int x = 0; x < MAP_WIDTH; ++x) {
-            int neighbors = countNeighbors(x, y);
-            if (map[y][x] == 1) {
-                newMap[y][x] = (neighbors >= 4) ? 1 : 0;
-            } else {
-                newMap[y][x] = (neighbors >= 5) ? 1 : 0;
+    void createWindingCorridor(int x1, int y1, int x2, int y2) {
+        std::uniform_int_distribution<> widthDist(1, 3);
+        std::uniform_int_distribution<> offsetDist(-1, 1);
+        
+        int x = x1;
+        int y = y1;
+        
+        while (x != x2 || y != y2) {
+            int width = widthDist(gen);
+            for (int wy = -width; wy <= width; wy++) {
+                for (int wx = -width; wx <= width; wx++) {
+                    int newX = x + wx;
+                    int newY = y + wy;
+                    if (newX >= 0 && newX < MAP_WIDTH && newY >= 0 && newY < MAP_HEIGHT) {
+                        map[newY][newX] = FLOOR;
+                    }
+                }
             }
+
+            if (x < x2) x += 1 + offsetDist(gen);
+            else if (x > x2) x -= 1 + offsetDist(gen);
+            
+            if (y < y2) y += 1 + offsetDist(gen);
+            else if (y > y2) y -= 1 + offsetDist(gen);
+
+            x = std::clamp(x, 0, MAP_WIDTH - 1);
+            y = std::clamp(y, 0, MAP_HEIGHT - 1);
         }
     }
-    map = newMap;
-}
 
-void generateCave() {
-    initializeMap();
-    for (int i = 0; i < STEPS; ++i) {
-        cellularAutomataStep();
-    }
-}
-
-void render(SDL_Renderer* renderer) {
-    for (int y = 0; y < MAP_HEIGHT; ++y) {
-        for (int x = 0; x < MAP_WIDTH; ++x) {
-            SDL_FRect tile = {static_cast<float>(x * TILE_SIZE), static_cast<float>(y * TILE_SIZE), static_cast<float>(TILE_SIZE), static_cast<float>(TILE_SIZE)};
-            if (map[y][x] == 1) {
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);  // Черный
-            } else {
-                SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);  // Серый
+    void smoothMap(int iterations) {
+        for (int i = 0; i < iterations; i++) {
+            std::vector<std::vector<int>> newMap = map;
+            for (int y = 1; y < MAP_HEIGHT - 1; y++) {
+                for (int x = 1; x < MAP_WIDTH - 1; x++) {
+                    int neighborWalls = 0;
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            if (map[y + dy][x + dx] == WALL) neighborWalls++;
+                        }
+                    }
+                    if (neighborWalls > 4) newMap[y][x] = WALL;
+                    else if (neighborWalls < 4) newMap[y][x] = FLOOR;
+                }
             }
-            SDL_RenderFillRect(renderer, &tile);
+            map = newMap;
         }
     }
-    SDL_RenderPresent(renderer);
-}
+
+public:
+    DungeonGenerator() : gen(rd()) {
+        initializeMap();
+    }
+
+    void generate() {
+        const int DIAMETER = 16;
+        const int RADIUS = DIAMETER / 2;
+        std::vector<CircleRoom> rooms;
+        std::uniform_int_distribution<> numRoomsDist(5, 10); // Random 5-10 rooms
+        std::uniform_int_distribution<> yDist(8, MAP_HEIGHT - 8);
+
+        int numRooms = numRoomsDist(gen);
+        int xStep = (MAP_WIDTH - 20) / (numRooms - 1); // Evenly space rooms across width
+
+        // Place rooms in linear progression
+        for (int i = 0; i < numRooms; i++) {
+            CircleRoom room;
+            int attempts = 0;
+            const int maxAttempts = 50;
+
+            do {
+                // Linear progression with some randomness
+                room.x = 10 + (i * xStep) + (gen() % 10 - 5); // Base x + small random offset
+                room.y = yDist(gen);
+                room.radius = RADIUS;
+                attempts++;
+            } while (!isValidCirclePlacement(room, rooms) && attempts < maxAttempts);
+
+            if (attempts < maxAttempts) {
+                createCircleRoom(room);
+                rooms.push_back(room);
+            } else {
+                // If placement fails, try a simpler position
+                room.x = 10 + (i * xStep);
+                room.y = MAP_HEIGHT / 2;
+                if (isValidCirclePlacement(room, rooms)) {
+                    createCircleRoom(room);
+                    rooms.push_back(room);
+                }
+            }
+        }
+
+        // Connect rooms sequentially
+        for (size_t i = 1; i < rooms.size(); i++) {
+            createWindingCorridor(rooms[i-1].x, rooms[i-1].y, rooms[i].x, rooms[i].y);
+        }
+
+        // Apply smoothing
+        smoothMap(2);
+    }
+
+    void print() const {
+        for (int y = 0; y < MAP_HEIGHT; y++) {
+            for (int x = 0; x < MAP_WIDTH; x++) {
+                std::cout << (map[y][x] == WALL ? "#" : ".");
+            }
+            std::cout << std::endl;
+        }
+    }
+
+    const std::vector<std::vector<int>>& getMap() const {
+        return map;
+    }
+
+    std::pair<int, int> getStartPosition() const { return {10, MAP_HEIGHT / 2}; }
+    std::pair<int, int> getEndPosition() const { return {MAP_WIDTH - 10, MAP_HEIGHT / 2}; }
+};
 
 int main() {
-    srand(static_cast<unsigned>(time(0)));
-    SDL_Init(SDL_INIT_VIDEO);
-    SDL_Window* window = SDL_CreateWindow("Procedural Cave", SCREEN_WIDTH, SCREEN_HEIGHT, 0);
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-
-    generateCave();
-
-    bool running = true;
-    SDL_Event event;
-    while (running) {
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) {
-                running = false;
-            }
-        }
-        render(renderer);
-        SDL_Delay(100);
-    }
-
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    DungeonGenerator dungeon;
+    dungeon.generate();
+    dungeon.print();
+    
+    auto start = dungeon.getStartPosition();
+    auto end = dungeon.getEndPosition();
+    std::cout << "\nStart: (" << start.first << "," << start.second << ")\n";
+    std::cout << "End: (" << end.first << "," << end.second << ")\n";
     return 0;
 }
